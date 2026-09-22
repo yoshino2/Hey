@@ -1,0 +1,58 @@
+name: Build LibXray for HarmonyOS
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  build-libxray:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go (Bootstrapping)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x' # 满足脚本中 go1.24.6+ 的启动要求
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache/Build OHOS Go Toolchain
+        run: |
+          OHOS_GO_DIR="${HOME}/ohos-go-1.26.5"
+          echo "OHOS_GO_FORK=${OHOS_GO_DIR}" >> $GITHUB_ENV
+          
+          if [ ! -f "${OHOS_GO_DIR}/bin/go" ]; then
+            echo "Building OHOS Go Fork..."
+            git clone --branch v1.26.5-beta1 https://github.com/star4277/ohos-go.git "${OHOS_GO_DIR}"
+            cd "${OHOS_GO_DIR}/src"
+            GOROOT_BOOTSTRAP=$GOROOT GOTOOLCHAIN=local ./make.bash
+          fi
+
+      - name: Download OpenHarmony NDK
+        run: |
+          # 下载与解压 OpenHarmony Native SDK (以 Linux NDK 为例)
+          mkdir -p ${HOME}/ohos-sdk
+          cd ${HOME}/ohos-sdk
+          wget https://repo.huaweicloud.com/openharmony/os/5.0.0-Release/ohos-sdk-full/linux/native-linux-x64-5.0.0-Release.tar.gz
+          tar -xzf native-linux-x64-5.0.0-Release.tar.gz
+          
+          # 设置环境变量供脚本读取
+          echo "OHOS_NATIVE_HOME=${HOME}/ohos-sdk/native" >> $GITHUB_ENV
+
+      - name: Run Build Script
+        run: |
+          # 执行编译脚本
+          bash scripts/build_libxray_ohos.sh
+
+      - name: Upload Built libxray.so
+        uses: actions/upload-artifact@v4
+        with:
+          name: libxray-arm64-v8a
+          path: entry/src/main/cpp/prebuilt/arm64-v8a/libxray.so
